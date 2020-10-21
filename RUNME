@@ -1,0 +1,31 @@
+#!/bin/sh
+
+d=`date  +%s`
+
+mkdir /root/prof/${d}
+cd /root/prof/${d}
+
+(
+
+pmcstat -n 10000000 -S unhalted-cycles -O sample.stat sleep 30 &
+#pmcstat -n 10000000 -S instructions -O stalls.stat sleep 30
+pmcstat -n 10000000 -S RESOURCE_STALLS.ANY -O stalls.stat sleep 30
+#pmcstat -n 10000000 -S RS_FULL_STALL.ALL -O stalls.stat sleep 30
+wait
+pmcstat -R sample.stat -z 32 -G qqq1
+pmcstat -R stalls.stat -z 32 -G qqq1.stalls
+/root/prof/FlameGraph/stackcollapse-pmc.pl qqq1 |grep -v "sched_idletd" >qqq1.collapse
+/root/prof/FlameGraph/stackcollapse-pmc.pl qqq1.stalls |grep -v "sched_idletd" > qqq1.stalls.collapse
+/root/prof/FlameGraph/difffolded.pl -n qqq1.stalls.collapse qqq1.collapse | \
+/root/prof/FlameGraph/flamegraph.pl > flame.svg
+pmcstat -R sample.stat -z 16 -g
+gprof /boot/kernel/kernel CPU_CLK_UNHALTED_CORE/kernel.gmon > qqq
+pmcannotate -a sample.stat /boot/kernel/kernel > qqq2
+
+) >log 2>&1 &
+
+wait
+tar cvf /root/results.${d}.tgz .
+
+ftp -u ftp://customer:ixcustomer@ftp.ixsystems.com/results.${d}.tgz /root/results.${d}.tgz
+
